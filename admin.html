@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <title>রাইড শেয়ারিং - লাইভ অ্যাডমিন ড্যাশবোর্ড</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+    h1 { color: #38bdf8; text-align: center; }
+    .status { text-align: center; font-weight: bold; margin-bottom: 20px; }
+    .connected { color: #4ade80; }
+    .disconnected { color: #f87171; }
+    .logs-container { background: #1e293b; border-radius: 8px; padding: 15px; height: 400px; overflow-y: auto; font-family: monospace; }
+    .log-item { padding: 8px 0; border-bottom: 1px solid #334155; }
+    .timestamp { color: #94a3b8; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+
+  <h1>🚖 রাইড-শেয়ারিং লাইভ অ্যাডমিন মনিটর</h1>
+  <div id="status" class="status disconnected">কানেক্ট হচ্ছে...</div>
+
+  <div class="logs-container" id="logs">
+    <div class="log-item">লাইভ ইভেন্ট লগের জন্য অপেক্ষা করা হচ্ছে...</div>
+  </div>
+
+  <script>
+    const statusDiv = document.getElementById('status');
+    const logsContainer = document.getElementById('logs');
+    const ws = new WebSocket('ws://localhost:3000');
+
+    ws.onopen = () => {
+      statusDiv.innerText = '● সার্ভারের সাথে লাইভ কানেক্টেড';
+      statusDiv.className = 'status connected';
+      
+      // অ্যাডমিন হিসেবে রেজিস্ট্রেশন
+      ws.send(JSON.stringify({ type: 'REGISTER', role: 'admin' }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'ADMIN_EVENT') {
+        const time = new Date().toLocaleTimeString();
+        const log = document.createElement('div');
+        log.className = 'log-item';
+        log.innerHTML = `<span class="timestamp">[${time}]</span> ${data.event}`;
+        logsContainer.prepend(log);
+      }
+    };
+
+    ws.onclose = () => {
+      statusDiv.innerText = '○ সার্ভার ডিসকানেক্টেড';
+      statusDiv.className = 'status disconnected';
+    };
+  </script>
+</body>
+</html>
