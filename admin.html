@@ -2,55 +2,148 @@
 <html lang="bn">
 <head>
   <meta charset="UTF-8">
-  <title>রাইড শেয়ারিং - লাইভ অ্যাডমিন ড্যাশবোর্ড</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ride-Sharing Live Admin Dashboard</title>
+  
+  <!-- Leaflet CSS for Maps -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
   <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
-    h1 { color: #38bdf8; text-align: center; }
-    .status { text-align: center; font-weight: bold; margin-bottom: 20px; }
-    .connected { color: #4ade80; }
-    .disconnected { color: #f87171; }
-    .logs-container { background: #1e293b; border-radius: 8px; padding: 15px; height: 400px; overflow-y: auto; font-family: monospace; }
-    .log-item { padding: 8px 0; border-bottom: 1px solid #334155; }
-    .timestamp { color: #94a3b8; font-size: 0.85em; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f6f9;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+    }
+    #status {
+      font-weight: bold;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background-color: #ef4444;
+    }
+    #status.connected {
+      background-color: #10b981;
+    }
+    #map {
+      height: 500px;
+      width: 100%;
+      margin-top: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .controls {
+      margin-top: 15px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
   </style>
 </head>
 <body>
 
-  <h1>🚖 রাইড-শেয়ারিং লাইভ অ্যাডমিন মনিটর</h1>
-  <div id="status" class="status disconnected">কানেক্ট হচ্ছে...</div>
-
-  <div class="logs-container" id="logs">
-    <div class="log-item">লাইভ ইভেন্ট লগের জন্য অপেক্ষা করা হচ্ছে...</div>
+  <div class="header">
+    <h2>🚕 রাইড-শেয়ারিং অ্যাডমিন লাইভ ট্র্যাকিং</h2>
+    <span id="status">ডিসকানেক্টেড</span>
   </div>
 
-  <script>
-    const statusDiv = document.getElementById('status');
-    const logsContainer = document.getElementById('logs');
-    const ws = new WebSocket('ws://localhost:3000');
+  <div class="controls">
+    <button onclick="simulateDriverMovement()">টেস্ট ড্রাইভার লোকেশন আপডেট পাঠান</button>
+  </div>
 
-    ws.onopen = () => {
-      statusDiv.innerText = '● সার্ভারের সাথে লাইভ কানেক্টেড';
-      statusDiv.className = 'status connected';
-      
-      // অ্যাডমিন হিসেবে রেজিস্ট্রেশন
-      ws.send(JSON.stringify({ type: 'REGISTER', role: 'admin' }));
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Leaflet JS for Maps -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // ১. ম্যাপ ইনিশিয়ালাইজেশন (ডিফল্ট সেন্টার: ঢাকা)
+    const map = L.map('map').setView([23.8103, 90.4125], 13);
+
+    // OpenStreetMap টাইলস যুক্ত করা
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // ড্রাইভারের মার্কার ভ্যারিয়েবল
+    let driverMarker = null;
+
+    // ২. WebSocket কানেকশন সেটআপ (Render Live Server)
+    const socket = new WebSocket('wss://ride-sharing-backend-uqcu.onrender.com');
+    const statusEl = document.getElementById('status');
+
+    socket.onopen = () => {
+      statusEl.textContent = 'লাইভ কানেক্টেড';
+      statusEl.classList.add('connected');
+      console.log('Connected to Render WebSocket Server');
     };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'ADMIN_EVENT') {
-        const time = new Date().toLocaleTimeString();
-        const log = document.createElement('div');
-        log.className = 'log-item';
-        log.innerHTML = `<span class="timestamp">[${time}]</span> ${data.event}`;
-        logsContainer.prepend(log);
+    socket.onclose = () => {
+      statusEl.textContent = 'ডিসকানেক্টেড';
+      statusEl.classList.remove('connected');
+    };
+
+    // ৩. সার্ভার থেকে আসা রিয়েল-টাইম ডাটা হ্যান্ডেল করা
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'LOCATION_UPDATE') {
+          updateMapLocation(data.lat, data.lng);
+        }
+      } catch (err) {
+        console.log('Received raw message:', event.data);
       }
     };
 
-    ws.onclose = () => {
-      statusDiv.innerText = '○ সার্ভার ডিসকানেক্টেড';
-      statusDiv.className = 'status disconnected';
-    };
+    // ৪. ম্যাপের ওপর মার্কার পজিশন আপডেট করা
+    function updateMapLocation(lat, lng) {
+      if (!driverMarker) {
+        // প্রথমবার মার্কার তৈরি
+        driverMarker = L.marker([lat, lng]).addTo(map)
+          .bindPopup('🚕 লাইভ ড্রাইভার').openPopup();
+      } else {
+        // নতুন লোকেশনে মার্কার সরানো
+        driverMarker.setLatLng([lat, lng]);
+      }
+      map.panTo([lat, lng]); // ম্যাপটি নতুন লোকেশনে ফোকাস করা
+    }
+
+    // ৫. টেস্ট ডাটা পাঠানোর ফাংশন (এলোমেলো একটু সরানোর জন্য)
+    function simulateDriverMovement() {
+      // ঢাকার আশেপাশেই একটু র্যান্ডম পজিশন চেঞ্জ
+      const newLat = 23.8103 + (Math.random() - 0.5) * 0.02;
+      const newLng = 90.4125 + (Math.random() - 0.5) * 0.02;
+
+      const payload = {
+        type: 'LOCATION_UPDATE',
+        lat: newLat,
+        lng: newLng
+      };
+
+      socket.send(JSON.stringify(payload));
+      
+      // তাৎক্ষণিক লোকাল ভিউ আপডেট (যাতে রেসপন্স স্পষ্ট বোঝা যায়)
+      updateMapLocation(newLat, newLng);
+    }
   </script>
 </body>
 </html>

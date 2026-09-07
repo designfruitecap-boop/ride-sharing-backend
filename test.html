@@ -4,7 +4,7 @@
   <h2>Ride-Sharing WebSocket Test</h2>
   <button onclick="sendLocation()">লোকেশন আপডেট পাঠান</button>
   <script>
-    const socket = new WebSocket('ws://localhost:3000');
+  const socket = new WebSocket('wss://ride-sharing-backend-uqcu.onrender.com');
 
     socket.onopen = () => {
       console.log('সার্ভারের সাথে কানেক্ট হয়েছে!');
