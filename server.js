@@ -20,7 +20,7 @@ const wss = new WebSocketServer({ server });
 
 // ১. MongoDB কানেকশন
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB সফলভাবে কানেক্ট হয়েছে!'))
+  .then(() => console.log('MongoDB সফলভাবে কানেক্ট হয়েছে!'))
   .catch((err) => console.error('MongoDB কানেকশন এরর:', err));
 
 // ২. Mongoose Schemas & Indexing Optimization
@@ -82,7 +82,7 @@ app.post('/api/signup', async (req, res) => {
     const newUser = new User({ name, email, password: hashedPassword, role });
     await newUser.save();
 
-    res.status(201).json({ message: 'অ্যাকাউন্ট তৈরি সফল হয়েছে', userId: newUser._id });
+    res.status(201).json({ message: 'অ্যাকাউন্ট তৈরি সফল হয়েছে', userId: newUser._id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -92,10 +92,10 @@ app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'ইউজার পাওয়া যায়নি' });
+    if (!user) return res.status(404).json({ message: 'ইউজার পাওয়া যায়নি' });
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) return res.status(401).json({ message: 'পাসওয়ার্ড ভুল' });
+    if (!isPasswordValid) return res.status(401).json({ message: 'পাসওয়ার্ড ভুল' });
 
     const token = jwt.sign({ userId: user._id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ message: 'লগইন সফল', token, userId: user._id, role: user.role, name: user.name });
@@ -104,7 +104,37 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// ৪. ডাইনামিক ফেয়ার ও ওটিপি হেলপার
+// ৩.১. Rating & Review Endpoint
+app.post('/api/rides/rate', async (req, res) => {
+  try {
+    const { rideId, rating, review } = req.body;
+    
+    const ride = await Ride.findById(rideId);
+    if (!ride) return res.status(404).json({ message: 'রাইড পাওয়া যায়নি' });
+
+    ride.rating = rating;
+    ride.review = review;
+    await ride.save();
+
+    if (ride.driverId) {
+      const driver = await User.findById(ride.driverId);
+      if (driver) {
+        const totalRatings = driver.totalRatings + 1;
+        const newRating = ((driver.rating * driver.totalRatings) + rating) / totalRatings;
+        
+        driver.rating = parseFloat(newRating.toFixed(1));
+        driver.totalRatings = totalRatings;
+        await driver.save();
+      }
+    }
+
+    res.json({ success: true, message: 'রেটিং সফলভাবে জমা হয়েছে!', rating: ride.rating });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ৪. ডাইনামিক ফেয়ার ও ওটিপি হেলপার
 function calculateFare(pickup, destination) {
   const R = 6371;
   const dLat = (destination.lat - pickup.lat) * Math.PI / 180;
@@ -230,7 +260,7 @@ wss.on('connection', (ws) => {
 
         broadcastToAdmin({ 
           type: 'ADMIN_EVENT', 
-          event: `নতুন রাইড রিকোয়েস্ট! ID: ${newRide._id}, ভাড়া: ${totalFare} টাকা (${pricingType})` 
+          event: `নতুন রাইড রিকোয়েস্ট! ID: ${newRide._id}, ভাড়া: ${totalFare} টাকা (${pricingType})` 
         });
       }
 
@@ -239,7 +269,7 @@ wss.on('connection', (ws) => {
         const ride = await Ride.findById(rideId);
 
         if (!ride) {
-          return ws.send(JSON.stringify({ status: 'ERROR', message: 'রাইড পাওয়া যায়নি!' }));
+          return ws.send(JSON.stringify({ status: 'ERROR', message: 'রাইড পাওয়া যায়নি!' }));
         }
 
         if (ride.otp === otpInput) {
@@ -254,7 +284,7 @@ wss.on('connection', (ws) => {
           });
 
           ws.send(startPayload);
-          broadcastToAdmin({ type: 'ADMIN_EVENT', event: `ট্রিপ শুরু হয়েছে! Ride ID: ${ride._id}` });
+          broadcastToAdmin({ type: 'ADMIN_EVENT', event: `ট্রিপ শুরু হয়েছে! Ride ID: ${ride._id}` });
         } else {
           ws.send(JSON.stringify({ status: 'ERROR', message: 'ভুল OTP!' }));
         }
@@ -268,11 +298,11 @@ wss.on('connection', (ws) => {
           type: 'RIDE_CANCELLED',
           rideId: ride._id,
           cancelledBy,
-          reason: reason || 'কারণ জানা যায়নি'
+          reason: reason || 'কারণ জানা যায়নি'
         });
 
         ws.send(cancelPayload);
-        broadcastToAdmin({ type: 'ADMIN_EVENT', event: `রাইড বাতিল করা হয়েছে! Ride ID: ${ride._id}` });
+        broadcastToAdmin({ type: 'ADMIN_EVENT', event: `রাইড বাতিল করা হয়েছে! Ride ID: ${ride._id}` });
       }
 
       if (data.type === 'UPDATE_TRIP_STATUS') {
